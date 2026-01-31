@@ -12,7 +12,7 @@ A Python implementation of an **N-body gravitational simulator** using **4th-ord
 
 ### Vectorized Physics
 
-* Uses **NumPy broadcasting** to compute all gravitational interactions in a single tensor operation.
+* Combines all gravitational pairwise operation into matrix/tensor operations.
 
 ### RK4 Time Integration
 
@@ -28,7 +28,7 @@ A Python implementation of an **N-body gravitational simulator** using **4th-ord
   v \\\\
   x
   \end{bmatrix}
-  \in \mathbb{R}^{3\times (2N)}
+  \in \mathbb{R}^{(2N)\times 3}
   $$
 * This allows for fast parallelized computation with numpy.
 
@@ -65,6 +65,22 @@ pip install numpy matplotlib tqdm
 
 ## Mathematical Formulation
 
+### Variables
+
+$G=6.6743*10^-11$: Gravitational Constant
+
+$t\in \mathbb{R}: Time (second)
+
+$N\in \mathbb{R}$: Number of bodies
+
+$m\in \mathbb{R}^{N}$: Mass of bodies (kg) [i]
+
+$x\in \mathbb{R}^{N\times 3}$: Position of bodies ($m$) [i, p]
+
+$v\in \mathbb{R}^{N\times 3}$: Velocity of bodies ($m/s$) [i, p]
+
+$a\in \mathbb{R}^{N\times 3}$: Acceleration of bodies ($m/s^2$) [i, p]
+
 ### 1. State-Space Dynamics
 
 $$
@@ -87,7 +103,7 @@ $$
 
 For positions 
 
-$$ x \in \mathbb{R}^{3 \times N} )$$ 
+$$ x \in \mathbb{R}^{N \times 3} $$ 
 
 the interaction tensor is defined as:
 
