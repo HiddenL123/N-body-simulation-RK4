@@ -1,179 +1,192 @@
 import numpy as np
-from body import Body
+from tqdm import tqdm
+import time
+
 G = 6.6743e-11
+MINUTE = 60
+HOUR = 3600
+DAY = 24 * HOUR
+YEAR = 365.24 * DAY
 
-
-def verlet_simulate(bodies, dt=3600, steps=24*365, softening=1e6):
-    # Initial half-kick
-    for b in bodies:
-        print("initial", b.x)
-        b.v += 0.5 * b.a * dt
+def create_t(x, softening=1e6):
+    """
+    Computes the interaction tensor T where T[i, p, j] represents the 
+    p-th Cartesian component of the gravitational influence of body j on body i.
     
-    for _ in range(steps):
-        # DRIFT
-        for b in bodies:
-            b.record()
-            b.x += b.v * dt
-            b.a[:] = 0.0
-
-        # COMPUTE a
-        for i in range(len(bodies) - 1):
-            for j in range(i + 1, len(bodies)):
-                b0 = bodies[i]
-                b1 = bodies[j]
-                r = b1.x - b0.x
-                dist = np.linalg.norm(r) + softening
-                a0 = G * b1.m * r / dist**3
-                a1 = -G * b0.m * r / dist**3
-                b0.a += a0
-                b1.a += a1
+    Formula: T[i][p][j] = (x_j[p] - x_i[p]) / ||x_j - x_i||^3
+    
+    Args:
+        x (ndarray): (N, 3) array of positions for N bodies.
+        softening (float): Small constant to prevent division by zero.
         
-        # KICK (full step for middle iterations)
-        for b in bodies:
-            b.v += b.a * dt
+    Returns:
+        ndarray: (N, 3, N) interaction tensor.
+    """
+    # x shape: (N, 3)
+    # R shape: (N, N, 3) -> R[i, j] is the vector from i to j
+    R = x[np.newaxis, :, :] - x[:, np.newaxis, :]
     
-    # Final half-kick to synchronize
-    for b in bodies:
-        b.v -= 0.5 * b.a * dt
-        print("final", b.x)
+    dist_sq = np.sum(R**2, axis=-1) + softening**2
+    kernel = dist_sq**(-1.5) # shape: (N, N)
+    
+    # Current T: (N, N, 3)
+    T = kernel[:, :, np.newaxis] * R
+    
+    # Transpose to (N, 3, N)
+    return np.transpose(T, (0, 2, 1))
 
+def f(y, Gm, softening, N):
+    """
+    Computes the state derivative (dy/dt) for the N-body system.
+    
+    Maps the current state y = [v; x] to its derivative 
+    f(y) = [a; v]
+    
+    Formula:
+        f(y) = [ d/dt(v) ] = [ a(x) ]
+               [ d/dt(x) ]   [  v   ]
+    
+    Args:
+        y (ndarray): (2N, 3) state tensor where y[:N] is velocity and y[N:] is position.
+        Gm (ndarray): (N,) vector of gravitational parameters (G * mass) for each body.
+        softening (float): Softening length for gravitational interactions.
+        N (int): Number of bodies in the system.
 
-def get_acc(r, b1m, dist3):
-    return G * b1m* r / dist3
+    Returns:
+        ndarray: (2N, 3) derivative tensor containing [acceleration; velocity].
+    """
+    v_curr = y[:N]
+    x_curr = y[N:]
+            
+    # Compute acceleration: a = T(x) @ Gm using dot product
+    T = create_t(x_curr, softening)
+    a = T @ Gm
+            
+    # Return [a; v] stacked vertically
+    return np.vstack((a, v_curr))
+
 
 def runge_kutta(bodies, dt=3600*3, steps=365*8, softening=1e6):
+    """
+    Integrates the N-body system using the 4th-order Runge-Kutta method.
+    
+    Args:
+        bodies (list): A list of Body objects containing initial mass, position, and velocity.
+        dt (float): Time step in seconds
+        steps (int): Number of steps to perform.
+        softening (float): Softening parameter passed to the derivative function f().
+
+    Formula:
+        y_next = y_curr + (dt/6) * (k1 + 2*k2 + 2*k3 + k4)
+        
+        Split into components:
+        v_next = v_curr + (dt/6) * (kv1 + 2*kv2 + 2*kv3 + kv4)
+        x_next = x_curr + (dt/6) * (kx1 + 2*kx2 + 2*kx3 + kx4)
+
+        k1:
+            kv1 = a(x)
+            kx1 = v
+        k2:
+            kv2 = a(x + dt/2 * kx1)
+            kx2 = v + dt/2 * kv1
+        k3:
+            kv3 = a(x + dt/2 * kx2)
+            kx2 = v + dt/2 * kv2
+        k4:
+            kv4 = a(x + dt * kx3)
+            kx4 = v + dt * kv3
+
+    Returns:
+        ndarray: A (steps, N, 3) array containing the position history of all bodies.
+    """
     h = dt
-    for _ in range(steps):
-        # get kv1
-        for i in range(len(bodies) - 1):
-            for j in range(i+1, len(bodies)):
-                b0 = bodies[i]
-                b1 = bodies[j]
+    hd2 = h/2
+    hd6 = h/6
+    Gm = G * np.array([b.m for b in bodies])
+    N = len(bodies)
+    
+    traj_data = np.empty((steps, N, 3))
+    # y = (v,x)
+    y = np.empty((2 * N, 3))
+    y[:N] = [b.v for b in bodies]
+    y[N:] = [b.x for b in bodies]
 
-                r = b1.x - b0.x
-                dist3 = (np.linalg.norm(r) + softening)**3
-                b0.a += get_acc(r, b1.m, dist3)
-                b1.a += get_acc(-r, b0.m, dist3)
+    for i in tqdm(range(steps), desc="Simulating"):
 
-        for i in range(len(bodies)):
-            b = bodies[i]
-            b.kv1 = b.a[:]
-            b.kx1 = b.v[:]
+        k1 = f(y, Gm, softening, N)
+        k2 = f(y + hd2 * k1, Gm, softening, N)
+        k3 = f(y + hd2 * k2, Gm, softening, N)
+        k4 = f(y + h * k3, Gm, softening, N)
 
-            x = b.x[:]
-            v = b.v[:]
+        y += hd6 * (k1 + 2*k2 + 2*k3 + k4)
+    
+        traj_data[i] = y[N:]
+    return traj_data
 
-            b.xtemp = x + b.kx1 * h/2
-            b.vtemp = v + b.kv1 * h/2
+from n_body_systems.solar_system import solar_system
+from n_body_systems.inner_solar_system import inner_solar_system
+from n_body_systems.earth_moon_sun import earth_moon_sun
 
-            b.a = np.zeros(3)
+class Config():
+    """
+    A configuration container for N-body simulation parameters.
 
-        # get kv2
-        for i in range(len(bodies) - 1):
-            for j in range(i+1, len(bodies)):
-                b0 = bodies[i]
-                b1 = bodies[j]
+    Attributes:
+        system (list): List of Body objects to be simulated.
+        dt (float): The time step size in seconds (delta t).
+        steps (int): Total number of steps.
+        softening (float): A softening constant to avoid numerical 
+            divergence to infinity during close encounters (default 1e6).
+        N (int): The number of bodies in the system
+    """
+    def __init__(self, system, dt, steps, softening=1e6):
+        self.system = system
+        self.dt = dt
+        self.steps = steps
+        self.softening = softening
+        self.N = len(system)
 
-                r = b1.xtemp - b0.xtemp
-                dist3 = (np.linalg.norm(r) + softening)**3
-                b0.a += get_acc(r, b1.m, dist3)
-                b1.a += get_acc(-r, b0.m, dist3)
-        
-        for i in range(len(bodies)):
-            b = bodies[i]
-            b.kv2 = b.a[:]
-            b.kx2 = b.vtemp[:]
-
-            x0 = b.x[:]
-            v0 = b.v[:]
-
-            b.xtemp = x0 + b.kx2 * h/2
-            b.vtemp = v0 + b.kv2 * h/2
-
-            b.a = np.zeros(3)
-        
-        # get kv3
-        for i in range(len(bodies) - 1):
-            for j in range(i+1, len(bodies)):
-                b0 = bodies[i]
-                b1 = bodies[j]
-
-                r = b1.xtemp - b0.xtemp
-                dist3 = (np.linalg.norm(r) + softening)**3
-                b0.a += get_acc(r, b1.m, dist3)
-                b1.a += get_acc(-r, b0.m, dist3)
-        
-        for i in range(len(bodies)):
-            b = bodies[i]
-            b.kv3 = b.a[:]
-            b.kx3 = b.vtemp[:]
-
-            x0 = b.x[:]
-            v0 = b.v[:]
-
-            b.xtemp = x0 + b.kx3 * h
-            b.vtemp = v0 + b.kv3 * h
-
-            b.a = np.zeros(3)
-        
-        # get kv4
-        for i in range(len(bodies) - 1):
-            for j in range(i+1, len(bodies)):
-                b0 = bodies[i]
-                b1 = bodies[j]
-
-                r = b1.xtemp - b0.xtemp
-                dist3 = (np.linalg.norm(r) + softening)**3
-                b0.a += get_acc(r, b1.m, dist3)
-                b1.a += get_acc(-r, b0.m, dist3)
-        
-        for i in range(len(bodies)):
-            b = bodies[i]
-            b.kv4 = b.a[:]
-            b.kx4 = b.vtemp
-
-            b.x += (h/6)*(b.kx1 + 2*b.kx2 + 2*b.kx3 + b.kx4)
-            b.v += (h/6)*(b.kv1 + 2*b.kv2 + 2*b.kv3 + b.kv4)
-
-            b.record()
-            b.a = np.zeros(3)
-        
-
-G = 6.67430e-11
-
-DAY = 24 * 3600         # seconds
-
-solar_system = []
-solar_system.append(Body(1.9885e30, np.array([0.0, 0.0, 0.0]), np.array([0.0, 0.0, 0.0])))
-solar_system.append(Body(5.9722e24, np.array([1.495978707e11, 0.0, 0.0]), np.array([0.0, 2.9785e4, 0.0])))
-solar_system.append(Body(7.342e22,  np.array([1.49982271e11, 0.0, 0.0]), np.array([0.0, 3.0807e4, 0.0])))
-
-
-from solar_system import solar_system
-from inner_solar_system import inner_solar_system
-
+    def __iter__(self):
+        yield self.system
+        yield self.dt
+        yield self.steps
+        yield self.softening
+    
+    
 if __name__ == "__main__":
-    bodies = []
-    for _ in range(5):
-        x = 1e12 * np.random.random(3).astype(float)
-        mass = 1e24 * np.random.random()
-        bodies.append(Body(mass, x))
+    cur_conf = Config(inner_solar_system, dt=10*MINUTE, steps=6*24*365) # inner solar system, 10 minute steps, 1 years
+    #cur_conf = Config(inner_solar_system, dt=10*MINUTE, steps=10*6*24*365) # inner solar system, 10 minute steps, 10 years
+    #cur_conf = Config(earth_sun_moon, dt=1*MINUTE, steps=6*24*28) # earth sun moon, 1 minute steps, 1 month
+    #cur_conf = Config(earth_sun_moon, dt=10*MINUTE, steps=6*24*365) # earth sun moon, 10 minute steps, 1 year
+    #cur_conf = Config(earth_sun_moon, dt=10*MINUTE, steps=10*6*24*365) # earth sun moon, 10 minute steps, 10 years
+    #cur_conf = Config(solar_system, dt=10*MINUTE, steps=6*24*365) # full solar system, 10 minute steps, 1 year
+    #cur_conf = Config(solar_system, dt=10*MINUTE, steps=10*6*24*365) # full solar system, 10 minute steps, 10 years
+    #cur_conf = Config(solar_system, dt=60*MINUTE, steps=100*6*24*365) # full solar system, 1 hour steps, 100 years note: phobos and deimos are unstable with large step
+    
+    current = time.time()
+    # traj shape: (steps, N, 3)
+    traj_data = runge_kutta(*cur_conf) 
 
-    system = inner_solar_system
-    runge_kutta(system, dt = 10*60, steps = 6*24*365)
-    #hermite_simulate(solar_system)
+    print(f"Simulation Elapsed: {time.time() - current:.2f} seconds")
+
     import matplotlib.pyplot as plt
 
-    plt.figure(figsize=(6, 6))
+    plt.figure(figsize=(8, 8))
 
-    for b in system:
-        traj = np.array(b.trajectory)
-        plt.plot(traj[:, 0], traj[:, 1])
+    # Iterate through each body by index
+    for i in range(cur_conf.N):
+        # Extract all time steps for body 'i', dimensions x (0) and y (1)
+        x_coords = traj_data[:, i, 0]
+        y_coords = traj_data[:, i, 1]
+        
+        plt.plot(x_coords, y_coords, label=f"Body {i}")
 
     plt.axis("equal")
-    plt.xlabel("x (m)")
-    plt.ylabel("y (m)")
-    plt.title("Trajectories")
+    plt.grid(True, linestyle='--', alpha=0.6)
+    plt.xlabel("x (meters)")
+    plt.ylabel("y (meters)")
+    plt.title("Vectorized N-Body Trajectories")
+    # plt.legend() # Optional: add labels if you have names for the bodies
     plt.show()
     
 
