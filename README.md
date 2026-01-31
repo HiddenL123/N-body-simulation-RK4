@@ -22,10 +22,7 @@ A Python implementation of an **N-body gravitational simulator** using **4th-ord
 
 ### Softening for Close Encounters
 
-* Includes **Plummer softening** to prevent numerical singularities during close approaches:
-
-  $$\epsilon > 0$$
-
+* Includes **Plummer softening** to prevent dividing by zero and having divergence to infinity during close approaches:
 ---
 
 ## Requirements
@@ -68,6 +65,8 @@ $x\in \mathbb{R}^{N\times 3}$: Position of bodies ($m$) [i, p]
 $v\in \mathbb{R}^{N\times 3}$: Velocity of bodies ($m/s$) [i, p]
 
 $a\in \mathbb{R}^{N\times 3}$: Acceleration of bodies ($m/s^2$) [i, p]
+
+$\epsilon > 0$: Softener parameter to prevent dividing by zero
 
 ### 1. State-Space Dynamics
 
