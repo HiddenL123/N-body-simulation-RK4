@@ -67,7 +67,7 @@ pip install numpy matplotlib tqdm
 
 ### Variables
 
-$G=6.6743*10^-11$: Gravitational Constant
+$G=6.6743*10^{-11}$: Gravitational Constant
 
 $t\in \mathbb{R}$: Time (second)
 
