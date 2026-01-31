@@ -128,7 +128,3 @@ k_1 + 2k_2 + 2k_3 + k_4
 ]$$
 
 ---
-
-
-* Write a **benchmark or energy-conservation section**
-* Adapt this for a **GitHub research-style README** with figures and results
