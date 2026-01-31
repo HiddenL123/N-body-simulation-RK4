@@ -1,7 +1,3 @@
-##Runge Kutta vectorized N body simulation
-
----
-
 # N-Body Simulation (RK4)
 
 A Python implementation of an **N-body gravitational simulator** using **4th-order Runge–Kutta (RK4)** time integration and a fully **vectorized tensor-based** acceleration computation.
