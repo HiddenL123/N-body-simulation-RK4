@@ -69,7 +69,7 @@ pip install numpy matplotlib tqdm
 
 $G=6.6743*10^-11$: Gravitational Constant
 
-$t\in \mathbb{R}: Time (second)
+$t\in \mathbb{R}$: Time (second)
 
 $N\in \mathbb{R}$: Number of bodies
 
