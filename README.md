@@ -18,14 +18,6 @@ A Python implementation of an **N-body gravitational simulator** using **4th-ord
 
 * The entire system is represented as a single phase-space matrix:
   
-  $$
-  y =
-  \begin{bmatrix}
-  v \\\\
-  x
-  \end{bmatrix}
-  \in \mathbb{R}^{(2N)\times 3}
-  $$
 * This allows for fast parallelized computation with numpy.
 
 ### Softening for Close Encounters
@@ -84,7 +76,7 @@ y =
 \begin{bmatrix}
 v \\\\
 x
-\end{bmatrix},
+\end{bmatrix}\in \mathbb{R}^{(2N)\times 3},
 \quad
 \frac{dy}{dt} = f(y) =
 \begin{bmatrix}
