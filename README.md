@@ -69,7 +69,7 @@ $t\in \mathbb{R}$: Time (second)
 
 $N\in \mathbb{R}$: Number of bodies
 
-$m\in \mathbb{R}^{N}$: Mass of bodies (kg) [i]
+$m\in \mathbb{R}^{N}$: Mass of bodies ($kg$) [i]
 
 $x\in \mathbb{R}^{N\times 3}$: Position of bodies ($m$) [i, p]
 
